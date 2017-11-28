@@ -33,7 +33,7 @@ public class App {
 
     @Parameter(names = {"-h", "-?", "--help"}, description = "Help")
     private static boolean help = false;
-    
+
     public static void main(String[] args) throws IOException {
         App theApp = new App();
 

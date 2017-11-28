@@ -15,4 +15,4 @@ include 'api'
 include 'services:webservice'
 */
 
-rootProject.name = 'retweet-generator'
+rootProject.name = 'simple-retweet-generator'
