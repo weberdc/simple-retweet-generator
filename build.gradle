@@ -1,0 +1,22 @@
+apply plugin: 'java'
+apply plugin: 'application'
+apply plugin: 'idea'
+
+repositories {
+    jcenter()
+}
+
+dependencies {
+    compile 'com.google.guava:guava:23.0'
+    compile 'com.fasterxml.jackson.core:jackson-databind:2.9.1'
+    compile 'com.beust:jcommander:1.72'
+}
+
+mainClassName = 'org.dcw.twitter.generator.App'
+
+sourceCompatibility = 1.8
+targetCompatibility = 1.8
+
+task wrapper(type: Wrapper) {
+  gradleVersion = '4.3.1'
+}
