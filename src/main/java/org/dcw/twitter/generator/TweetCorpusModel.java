@@ -18,7 +18,6 @@ package org.dcw.twitter.generator;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.google.common.collect.Lists;
 
 import java.io.BufferedWriter;
@@ -51,7 +50,10 @@ public class TweetCorpusModel {
                     try {
                         return Stream.of(new TweetModel(JSON.readValue(s, JsonNode.class)));
                     } catch (IOException e) {
-                        System.err.println("Cannot parse JSON from line starting: " + s.substring(0, 50));
+                        System.err.println(
+                            "Cannot parse JSON from line starting: " +
+                            s.substring(0, 50)
+                        );
                         return Stream.empty();
                     }
                 })
@@ -64,9 +66,10 @@ public class TweetCorpusModel {
     }
 
     public boolean saveModel() {
+        System.out.println("Writing to " + file);
         final String content = tweets.stream().map(model -> {
             try {
-                return JSON.writeValueAsString(model.root) + "\n";
+                return JSON.writeValueAsString(model.getRoot()) + "\n";
             } catch (JsonProcessingException e) {
                 System.err.println("Failed to convert JsonNode tree to String: " + e.getMessage());
                 return ""; // avoids blank lines
@@ -74,7 +77,6 @@ public class TweetCorpusModel {
         }).collect(Collectors.joining());
 
         try (BufferedWriter out = Files.newBufferedWriter(Paths.get(file), StandardCharsets.UTF_8)) {
-            System.out.println("Writing to " + file);
             out.write(content);
         } catch (IOException e) {
             System.err.println("Error writing tweets to " + file + ": " + e.getMessage());
@@ -97,46 +99,15 @@ public class TweetCorpusModel {
     }
 
     public String getText(final int i) {
-        return tweets.get(i).get("text").asText("");
+        final TweetModel t = tweets.get(i);
+        return t.get("text").asText(t.get("full_text").asText(""));
     }
 
     public int size() {
         return tweets.size();
     }
 
-    class TweetModel {
-        private JsonNode root;
-
-        public TweetModel(JsonNode root) {
-            this.root = root;
-        }
-
-        JsonNode get(final String path) {
-            return getNested(root, path);
-        }
-
-        JsonNode getNested(final JsonNode obj, final String path) {
-            if (path.contains(".")) {
-                final String head = path.substring(0, path.indexOf('.'));
-                final String tail = path.substring(path.indexOf('.') + 1);
-                if (head.startsWith("[")) {
-                    final int index = Integer.parseInt(head.substring(1, head.length() - 1));
-                    if (obj.has(index)) {
-                        return getNested(obj.get(index), tail);
-                    } else {
-                        System.err.println("Could not find index: " + index);
-                        return JsonNodeFactory.instance.nullNode(); // error!
-                    }
-                }
-                if (obj.has(head)) {
-                    return getNested(obj.get(head), tail);
-                } else {
-                    System.err.println("Could not find sub-path: " + tail);
-                    return JsonNodeFactory.instance.nullNode(); // error!
-                }
-            } else {
-                return obj.has(path) ? obj.get(path) : JsonNodeFactory.instance.nullNode();
-            }
-        }
+    public TweetModel get(final int i) {
+        return tweets.get(i);
     }
 }

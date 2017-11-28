@@ -15,6 +15,10 @@
  */
 package org.dcw.twitter.generator;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+
 import javax.swing.DefaultCellEditor;
 import javax.swing.DefaultComboBoxModel;
 import javax.swing.Icon;
@@ -43,14 +47,21 @@ import java.awt.Insets;
 import java.awt.Toolkit;
 import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.DataFlavor;
+import java.awt.datatransfer.StringSelection;
 import java.awt.datatransfer.UnsupportedFlavorException;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.io.IOException;
+import java.math.BigDecimal;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
+import java.util.Random;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
@@ -66,6 +77,13 @@ import java.util.stream.Stream;
  */
 public class RetweetGeneratorUI extends JPanel {
 
+    private static final DateTimeFormatter TWITTER_TIMESTAMP_FORMAT =
+        DateTimeFormatter.ofPattern("EEE MMM dd HH:mm:ss Z yyyy", Locale.ENGLISH);
+    private static final int TWITTER_OLD_MAX_LENGTH = 140;
+    private static final int ID_LENGTH = 16;
+    private static final Random R = new Random();
+    public static final String ELLIPSIS = "\u2026";
+    private static ObjectMapper JSON = new ObjectMapper();
     private static final ImageIcon DELETE_ICON = new ImageIcon(
         RetweetGeneratorUI.class.getResource("/icons/Remove-16.png")
     );
@@ -76,6 +94,7 @@ public class RetweetGeneratorUI extends JPanel {
 
     private DefaultTableModel tableModel;
     private JTable tweetTable;
+    private JComboBox<String> namePicker;
 
     private enum COMMANDS { RT, DELETE }
 
@@ -105,7 +124,7 @@ public class RetweetGeneratorUI extends JPanel {
         gbc.insets = new Insets(0, 0, 5, 5);
         add(nameButton, gbc);
 
-        final JComboBox namePicker = new JComboBox<>(nameCBModel);
+        namePicker = new JComboBox<>(nameCBModel);
         namePicker.setEditable(true);
         namePicker.setRenderer(new ButtonComboRenderer(DELETE_ICON, namePicker));
         namePicker.addItem("");
@@ -180,6 +199,10 @@ public class RetweetGeneratorUI extends JPanel {
         });
     }
 
+    private String generateName() {
+        return generateName(Collections.emptyList()); // anything will do
+    }
+
     private String generateName(final List<String> elements) {
         String newName;
         do {
@@ -188,6 +211,29 @@ public class RetweetGeneratorUI extends JPanel {
             newName = NAME_PARTS[index1] + "." + NAME_PARTS[index2];
         } while (elements.contains(newName));
         return newName;
+    }
+
+    private String now() {
+        return TWITTER_TIMESTAMP_FORMAT.format(ZonedDateTime.now());
+    }
+
+    /**
+     * Creates a plausible tweet ID.
+     *
+     * @return A plausible tweet ID.
+     */
+    private static String generateID() {
+        final StringBuilder idStr = new StringBuilder(Long.toString(System.currentTimeMillis()));
+        while (idStr.length() < ID_LENGTH) {
+            idStr.append(R.nextInt(10)); // 0-9
+        }
+        return idStr.toString();
+    }
+
+
+    private void pushToClipboard(final String s) {
+        Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+        clipboard.setContents(new StringSelection(s), null);
     }
 
     private JTable buildTweetTable() {
@@ -222,6 +268,13 @@ public class RetweetGeneratorUI extends JPanel {
             final int row = e.getModifiers();
             switch (COMMANDS.valueOf(e.getActionCommand())) {
                 case RT:
+                    String retweeter = (String) namePicker.getSelectedItem();
+                    if (retweeter == null || retweeter.trim().isEmpty()) {
+                        retweeter = generateName();
+                    }
+                    String retweet = makeRetweet(retweeter, model.get(row));
+                    System.out.println("Generated retweet by @" + retweeter);
+                    pushToClipboard(retweet);
 
                     break;
                 case DELETE:
@@ -231,6 +284,53 @@ public class RetweetGeneratorUI extends JPanel {
                     SwingUtilities.invokeLater(RetweetGeneratorUI.this::updateTweetTable);
                     break;
             }
+        }
+    }
+
+    private String makeRetweet(final String retweeter, final TweetModel originalTweet) {
+
+        final TweetModel retweet = new TweetModel(JsonNodeFactory.instance.objectNode());
+
+        final String newID = generateID();
+        retweet.set("id_str", newID);
+        retweet.set("id", BigDecimal.valueOf(Long.parseLong(newID)));
+
+        retweet.set("user", JsonNodeFactory.instance.objectNode());
+        retweet.set("user.screen_name", retweeter);
+
+        retweet.set("created_at", now());
+
+        // it occurred to me that the original tweet might itself be a retweet
+        final TweetModel tweetToRetweet = ! originalTweet.get("retweeted_status").isNull()
+            ? new TweetModel(originalTweet.get("retweeted_status"))
+            : originalTweet;
+
+        retweet.set("retweeted_status", tweetToRetweet.getRoot());
+
+        final String originalAuthor = tweetToRetweet.get("user.screen_name").asText("<unset>");
+        final String originalText = ! tweetToRetweet.get("truncated").asBoolean(false)
+            ? tweetToRetweet.get("text").asText("")
+            : tweetToRetweet.get("full_text").asText("");
+
+        final String rtText = "RT @" + originalAuthor + ": " + originalText;
+        retweet.set("full_text", rtText);
+        final boolean truncate = rtText.length() > TWITTER_OLD_MAX_LENGTH;
+        retweet.set("truncated", truncate);
+        retweet.set(
+            "text",
+            truncate ? rtText.substring(0, TWITTER_OLD_MAX_LENGTH - 1) + ELLIPSIS : rtText
+        );
+
+        try {
+            return JSON.writeValueAsString(retweet.getRoot());
+        } catch (JsonProcessingException e) {
+            JOptionPane.showMessageDialog(
+                this,
+                "Error creating JSON for retweet:\n" + e.getMessage(),
+                "JSON Error",
+                JOptionPane.ERROR_MESSAGE
+            );
+            return "";
         }
     }
 
@@ -252,7 +352,9 @@ public class RetweetGeneratorUI extends JPanel {
         return data;
     }
 
+
     // COMBO STUFF
+
     /**
      * Borrowed from https://stackoverflow.com/questions/7387299/dynamically-adding-items-to-a-jcombobox
      */

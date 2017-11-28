@@ -25,14 +25,15 @@ import java.io.IOException;
 
 public class App {
 
+    public static final String APP_TITLE = "Retweet Generator";
+
     @Parameter(names = {"-t", "--tweets-file"},
         description = "File with current tweets")
     private String tweetsFile = "./tweets.json";
 
     @Parameter(names = {"-h", "-?", "--help"}, description = "Help")
     private static boolean help = false;
-
-
+    
     public static void main(String[] args) throws IOException {
         App theApp = new App();
 
@@ -59,24 +60,22 @@ public class App {
     }
 
     private void run() throws IOException {
+        System.out.println("Running " + APP_TITLE);
         // load model
-        TweetCorpusModel model = new TweetCorpusModel(tweetsFile);
+        final TweetCorpusModel model = new TweetCorpusModel(tweetsFile);
 
         // create and run GUI
-        JFrame frame = new JFrame("Retweet Generator");
+        final JFrame frame = new JFrame(APP_TITLE);
         frame.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
-        System.out.println("Frame created");
 
         final RetweetGeneratorUI ui = new RetweetGeneratorUI(model);
         frame.setContentPane(ui);
         System.out.println("UI built");
 
-        // Display the window
+        // Display the frame/window
         frame.setSize(600, 400);
-        System.out.println("Size set");
         frame.setVisible(true);
 
-        final String fqName = App.class.getName();
-        System.out.println(fqName.substring(fqName.lastIndexOf('.') + 1) + " is now running...");
+        System.out.println(APP_TITLE + " is now running...");
     }
 }
