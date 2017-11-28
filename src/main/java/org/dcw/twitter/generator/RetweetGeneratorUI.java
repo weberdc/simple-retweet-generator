@@ -16,20 +16,27 @@
 package org.dcw.twitter.generator;
 
 import javax.swing.DefaultCellEditor;
+import javax.swing.DefaultComboBoxModel;
 import javax.swing.Icon;
 import javax.swing.ImageIcon;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
+import javax.swing.JComboBox;
 import javax.swing.JLabel;
+import javax.swing.JList;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
+import javax.swing.ListCellRenderer;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableCellRenderer;
+import java.awt.BorderLayout;
+import java.awt.Color;
 import java.awt.Component;
+import java.awt.Dimension;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
@@ -39,10 +46,20 @@ import java.awt.datatransfer.DataFlavor;
 import java.awt.datatransfer.UnsupportedFlavorException;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.io.IOException;
+import java.util.List;
+import java.util.Objects;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
 /**
  * Tool to facilitate mocking up retweets of tweets.
+ *
+ * The SortedComboBox for the retweeter name is borrowed from
+ * <a href="https://stackoverflow.com/questions/7387299/dynamically-adding-items-to-a-jcombobox">Dynamically adding items to a JComboBox</a>
  *
  * Table button rendering and editor stuff adapted from
  * <a href="http://www.java2s.com/Code/Java/Swing-Components/ButtonTableExample.htm">ButtonTableExample</a>.
@@ -52,6 +69,11 @@ public class RetweetGeneratorUI extends JPanel {
     private static final ImageIcon DELETE_ICON = new ImageIcon(
         RetweetGeneratorUI.class.getResource("/icons/Remove-16.png")
     );
+    private final String[] NAME_PARTS = {
+        "salted", "tables", "benign", "sawfly", "sweaty", "noggin",
+        "willow", "powder", "untorn", "rewire", "placid", "joists"
+    };
+
     private DefaultTableModel tableModel;
     private JTable tweetTable;
 
@@ -60,6 +82,7 @@ public class RetweetGeneratorUI extends JPanel {
     private final String[] columnNames = {"RT", "User", "Tweet Text", "Delete"};
 
     private final TweetCorpusModel model;
+    private final SortedComboBoxModel nameCBModel = new SortedComboBoxModel(new String[]{""});
 
     public RetweetGeneratorUI(TweetCorpusModel model) {
         this.model = model;
@@ -72,16 +95,21 @@ public class RetweetGeneratorUI extends JPanel {
         // STRUCTURE
         setLayout(new GridBagLayout());
 
-        // retweet name
+        // retweeter name
         int row = 0;
-        final JLabel retweeterNameLabel = new JLabel("Retweeter");
+        final JButton nameButton = new JButton("Retweeter");
+        nameButton.setToolTipText("Click to generate a new random name");
 
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.gridy = row;
-        gbc.insets = new Insets(0, 0, 5, 0);
-        add(retweeterNameLabel, gbc);
+        gbc.insets = new Insets(0, 0, 5, 5);
+        add(nameButton, gbc);
 
-        final JLabel retweeterChooser = new JLabel("Retweeter Chooser (placeholder)");
+        final JComboBox namePicker = new JComboBox<>(nameCBModel);
+        namePicker.setEditable(true);
+        namePicker.setRenderer(new ButtonComboRenderer(DELETE_ICON, namePicker));
+        namePicker.addItem("");
+        namePicker.setSelectedItem("");
 
         gbc = new GridBagConstraints();
         gbc.gridy = row;
@@ -89,7 +117,7 @@ public class RetweetGeneratorUI extends JPanel {
         gbc.weightx = 1.0;
         gbc.fill = GridBagConstraints.HORIZONTAL;
         gbc.insets = new Insets(0, 0, 5, 0);
-        add(retweeterChooser, gbc);
+        add(namePicker, gbc);
 
 
         // tweet table
@@ -123,6 +151,15 @@ public class RetweetGeneratorUI extends JPanel {
 
 
         // BEHAVIOUR
+        nameButton.addActionListener(e -> {
+            final String newName = generateName(nameCBModel.getElements());
+            namePicker.addItem(newName);
+            namePicker.setSelectedItem(newName); // will trigger the ActionListener above
+        });
+        namePicker.addActionListener(e -> {
+            final String newName = (String) namePicker.getSelectedItem();
+            namePicker.addItem(newName);
+        });
         addButton.addActionListener(e -> {
             Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
             String maybeJson = "unset";
@@ -141,6 +178,16 @@ public class RetweetGeneratorUI extends JPanel {
                 ex.printStackTrace();
             }
         });
+    }
+
+    private String generateName(final List<String> elements) {
+        String newName;
+        do {
+            final int index1 = (int) Math.floor(Math.random() * NAME_PARTS.length);
+            final int index2 = (int) Math.floor(Math.random() * NAME_PARTS.length);
+            newName = NAME_PARTS[index1] + "." + NAME_PARTS[index2];
+        } while (elements.contains(newName));
+        return newName;
     }
 
     private JTable buildTweetTable() {
@@ -204,6 +251,113 @@ public class RetweetGeneratorUI extends JPanel {
         }
         return data;
     }
+
+    // COMBO STUFF
+    /**
+     * Borrowed from https://stackoverflow.com/questions/7387299/dynamically-adding-items-to-a-jcombobox
+     */
+    private class SortedComboBoxModel extends DefaultComboBoxModel<String> {
+
+        private static final long serialVersionUID = 1L;
+
+        public SortedComboBoxModel(final String[] items) {
+            Stream.of(items).sorted().filter(Objects::nonNull).forEach(this::addElement);
+            setSelectedItem(items[0]);
+        }
+
+        @Override
+        public void addElement(final String element) {
+            if (element == null) return;
+            for (int i = 0; i < getSize(); i++) {
+                Object elementAtI = getElementAt(i);
+                if (elementAtI.equals(element)) {
+                    return; // already present
+                }
+            }
+
+            insertElementAt(element, 0);
+        }
+
+        @Override
+        public void insertElementAt(final String element, int index) {
+            if (element == null) return;
+            int size = getSize();
+            //  Determine where to insert element to keep model in sorted order
+            for (index = 0; index < size; index++) {
+                Comparable c = getElementAt(index);
+                if (c.compareTo(element) > 0) {
+                    break;
+                }
+            }
+            super.insertElementAt(element, index);
+        }
+
+        public List<String> getElements() {
+            return IntStream.range(0, getSize()).mapToObj(this::getElementAt).collect(Collectors.toList());
+        }
+    }
+
+    /**
+     * Grabbed from https://stackoverflow.com/questions/11065282/display-buttons-in-jcombobox-items
+     */
+    class ButtonComboRenderer implements ListCellRenderer {
+        final Icon icon;
+        final JPanel panel;
+        final JLabel label;
+        final JButton button;
+
+        public ButtonComboRenderer(final Icon removeIcon, final JComboBox<String> combo) {
+            icon = removeIcon;
+            label = new JLabel();
+            button = new JButton(icon);
+            button.setPreferredSize(new Dimension(icon.getIconWidth(), icon.getIconHeight()));
+            panel = new JPanel(new BorderLayout());
+            panel.add(label);
+            panel.add(button, BorderLayout.EAST);
+            panel.addMouseListener(new MouseAdapter() {
+                @Override
+                public void mousePressed(MouseEvent e) {
+                    if (button.getX() < e.getX()) {
+//                        System.out.println("button contains the click remove the item");
+                        combo.removeItem(label.getText());
+                    }
+                }
+            });
+        }
+        //so we will install the mouse listener once
+        boolean isFirst = true;
+
+        @Override
+        public Component getListCellRendererComponent(
+            final JList list,
+            final Object value,
+            final int index,
+            final boolean isSelected,
+            final boolean cellHasFocus
+        ) {
+            if (isFirst) {
+                isFirst = false;
+                list.addMouseListener(new MouseAdapter() {
+                    @Override
+                    public void mousePressed(MouseEvent e) {
+                        panel.dispatchEvent(e);
+                        e.consume();
+                    }
+                });
+            }
+            String text = (String) value;
+            label.setText(text);
+            if (text == null)
+                button.setIcon(null);
+            else if (button.getIcon() == null)
+                button.setIcon(icon);
+            panel.setBackground(isSelected ? Color.YELLOW : Color.WHITE);
+            panel.setForeground(isSelected ? Color.WHITE : Color.BLACK);
+            return panel;
+        }
+    }
+
+    // TABLE STUFF
 
     class ButtonRenderer extends JButton implements TableCellRenderer {
 
