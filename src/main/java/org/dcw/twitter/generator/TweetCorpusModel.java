@@ -1,17 +1,30 @@
+/*
+ * Copyright 2017 Derek Weber
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package org.dcw.twitter.generator;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.common.collect.Lists;
 
 import java.io.BufferedWriter;
 import java.io.IOException;
-import java.math.BigDecimal;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.List;
@@ -21,7 +34,7 @@ import java.util.stream.Stream;
 public class TweetCorpusModel {
     private static ObjectMapper JSON = new ObjectMapper();
 
-    final List<TweetModel> tweets = Lists.newArrayList();
+    private final List<TweetModel> tweets = Lists.newArrayList();
     private String file;
 
     public TweetCorpusModel(String tweetsFile) {
@@ -31,6 +44,7 @@ public class TweetCorpusModel {
 
     private void loadTweets(String file) {
         try {
+            System.out.println("Reading tweets from " + file);
             tweets.addAll(Files.readAllLines(Paths.get(file))
                 .stream()
                 .filter(s -> !s.trim().isEmpty())
@@ -60,7 +74,8 @@ public class TweetCorpusModel {
             }
         }).collect(Collectors.joining());
 
-        try (BufferedWriter out = Files.newBufferedWriter(Paths.get(file), Charset.defaultCharset())) {
+        try (BufferedWriter out = Files.newBufferedWriter(Paths.get(file), StandardCharsets.UTF_8)) {
+            System.out.println("Writing to " + file);
             out.write(content);
         } catch (IOException e) {
             System.err.println("Error writing tweets to " + file + ": " + e.getMessage());
@@ -124,72 +139,5 @@ public class TweetCorpusModel {
                 return obj.has(path) ? obj.get(path) : JsonNodeFactory.instance.nullNode();
             }
         }
-
-        public void set(String path, Object value) {
-            setNested(root, path, value);
-        }
-
-        void setNested(final JsonNode node, final String path, final Object value) {
-            if (path.contains(".")) {
-                final String head = path.substring(0, path.indexOf('.'));
-                final String tail = path.substring(path.indexOf('.') + 1);
-                if (head.startsWith("[")) { // deal with arrays of structures
-                    final int index = Integer.parseInt(head.substring(1, head.length() - 1));
-                    if (node.has(index)) {
-                        setNested(node.get(index), tail, value);
-                    } else {
-                        System.err.println("Could not find index: " + index);
-                    }
-                } else if (node.has(head)) {
-                    if (tail.startsWith("[")) {
-                        setNested(node.get(head), tail, value);
-                    } else {
-                        setNested(node.get(head), tail, value);
-                    }
-                } else {
-                    System.err.println("Could not find sub-path: " + tail);
-                }
-            } else {
-                final JsonNodeFactory jsonNodeFactory = JsonNodeFactory.instance;
-                ObjectNode obj = null;
-                if (path.startsWith("[")) { // deal with arrays of values
-                    final int index = Integer.parseInt(path.substring(1, path.length() - 1));
-                    if (node.has(index)) {
-                        obj = (ObjectNode) node.get(index); // set node to the indexed element
-                    } else {
-                        System.err.println("Could not find index: " + index);
-                    }
-                } else {
-                    obj = (ObjectNode) node;
-                }
-
-                if (value == null) {
-                    obj.set(path, jsonNodeFactory.nullNode());
-                } else if (value instanceof JsonNode) {
-                    obj.set(path, (JsonNode) value);
-                } else if (value instanceof Boolean) {
-                    obj.set(path, jsonNodeFactory.booleanNode((Boolean) value));
-                } else if (value instanceof BigDecimal) {
-                    obj.set(path, jsonNodeFactory.numberNode((BigDecimal) value));
-                } else if (value instanceof String) {
-                    obj.set(path, jsonNodeFactory.textNode(value.toString()));
-                } else if (value instanceof double[]) { //value.getClass().isArray()) {
-                    final ArrayNode arrayNode = jsonNodeFactory.arrayNode();
-                    double[] array = (double[]) value;
-                    for (double d : array) {
-                        arrayNode.add(d);
-                    }
-                    obj.set(path, arrayNode);
-                } else if (value instanceof int[]) {
-                    final ArrayNode arrayNode = jsonNodeFactory.arrayNode();
-                    int[] array = (int[]) value;
-                    for (int i : array) {
-                        arrayNode.add(i);
-                    }
-                    obj.set(path, arrayNode);
-                }
-            }
-        }
-
     }
 }
